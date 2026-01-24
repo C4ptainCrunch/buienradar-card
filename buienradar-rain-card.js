@@ -1,12 +1,10 @@
 const DEFAULTS = {
-  lat: 50.79,
-  lon: 4.41,
   zoom: 9,
   autoplay: false,
   timeOffset: 15,
   animationSpeed: 200,
   opacity: 0.7,
-  showMarker: false,
+  showMarker: true,
 };
 
 class BuienradarRainCard extends HTMLElement {
@@ -163,7 +161,20 @@ class BuienradarRainCard extends HTMLElement {
 
   _initMap() {
     const mapContainer = this.shadowRoot.querySelector('.map-container');
-    const { lat, lon, zoom, opacity, showMarker } = this._config;
+    const { zoom, showMarker } = this._config;
+
+    // Use config coords, or fall back to home zone, or defaults
+    let lat = this._config.lat;
+    let lon = this._config.lon;
+    if (lat === undefined || lon === undefined) {
+      const homeZone = this._hass?.states?.['zone.home'];
+      if (homeZone) {
+        lat = lat ?? homeZone.attributes.latitude;
+        lon = lon ?? homeZone.attributes.longitude;
+      }
+    }
+    lat = lat ?? 50.79;
+    lon = lon ?? 4.41;
 
     const bounds = [[49.5, 0], [54.8, 10]];
 
@@ -359,9 +370,24 @@ class BuienradarRainCard extends HTMLElement {
 
 // Editor element
 class BuienradarRainCardEditor extends HTMLElement {
+  set hass(hass) {
+    this._hass = hass;
+    // Update lat/lon placeholders if not yet set
+    if (this._rendered && !this._config.lat && !this._config.lon) {
+      const homeZone = hass?.states?.['zone.home'];
+      if (homeZone) {
+        const latField = this.querySelector('#lat');
+        const lonField = this.querySelector('#lon');
+        if (latField && !latField.value) latField.placeholder = homeZone.attributes.latitude;
+        if (lonField && !lonField.value) lonField.placeholder = homeZone.attributes.longitude;
+      }
+    }
+  }
+
   setConfig(config) {
     this._config = { ...DEFAULTS, ...config };
     this._render();
+    this._rendered = true;
   }
 
   _render() {
@@ -373,14 +399,16 @@ class BuienradarRainCardEditor extends HTMLElement {
             type="number"
             step="0.01"
             id="lat"
-            value="${this._config.lat}"
+            value="${this._config.lat ?? ''}"
+            placeholder="Home zone"
           ></ha-textfield>
           <ha-textfield
             label="Longitude"
             type="number"
             step="0.01"
             id="lon"
-            value="${this._config.lon}"
+            value="${this._config.lon ?? ''}"
+            placeholder="Home zone"
           ></ha-textfield>
         </div>
         <div class="row">
@@ -454,7 +482,12 @@ class BuienradarRainCardEditor extends HTMLElement {
     // Add event listeners for text fields
     ['lat', 'lon', 'zoom', 'timeOffset', 'animationSpeed', 'opacity'].forEach(id => {
       this.querySelector(`#${id}`).addEventListener('change', (e) => {
-        this._config[id] = parseFloat(e.target.value);
+        const val = e.target.value;
+        if (val === '' && (id === 'lat' || id === 'lon')) {
+          delete this._config[id]; // Use home zone default
+        } else {
+          this._config[id] = parseFloat(val);
+        }
         this._fireChange();
       });
     });

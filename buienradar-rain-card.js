@@ -61,87 +61,41 @@ class BuienradarRainCard extends HTMLElement {
         }
         .controls {
           display: flex;
-          align-items: flex-start;
-          gap: 12px;
-          padding: 16px;
-          background: rgba(0,0,0,0.3);
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          background: rgba(0,0,0,0.5);
         }
         .play-btn {
-          background: #4a90d9;
+          background: none;
           border: none;
-          border-radius: 50%;
-          width: 44px;
-          height: 44px;
           cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-size: 16px;
+          color: rgba(255,255,255,0.8);
+          font-size: 12px;
+          padding: 4px;
           flex-shrink: 0;
         }
         .play-btn:hover {
-          background: #5a9fe9;
-        }
-        .timeline-container {
-          flex: 1;
-          padding-top: 8px;
+          color: white;
         }
         .timeline {
-          position: relative;
-          height: 20px;
-          cursor: pointer;
-        }
-        .timeline-track {
-          position: absolute;
-          top: 50%;
-          left: 0;
-          right: 0;
+          flex: 1;
           height: 4px;
-          background: #4a90d9;
-          transform: translateY(-50%);
-          border-radius: 2px;
+          background: rgba(255,255,255,0.2);
+          cursor: pointer;
+          position: relative;
         }
-        .timeline-dots {
-          position: absolute;
-          top: 50%;
-          left: 0;
-          right: 0;
-          transform: translateY(-50%);
-          display: flex;
-          justify-content: space-between;
+        .timeline-progress {
+          height: 100%;
+          background: rgba(255,255,255,0.6);
+          width: 0%;
         }
-        .timeline-dot {
-          width: 8px;
-          height: 8px;
-          background: #4a90d9;
-          border-radius: 50%;
-        }
-        .timeline-handle {
-          position: absolute;
-          top: 50%;
-          width: 20px;
-          height: 20px;
-          background: #4CAF50;
-          border-radius: 50%;
-          transform: translate(-50%, -50%);
-          cursor: grab;
-          z-index: 1;
-        }
-        .timeline-handle:active {
-          cursor: grabbing;
-        }
-        .timeline-labels {
-          display: flex;
-          justify-content: space-between;
-          margin-top: 8px;
-          color: rgba(255,255,255,0.8);
+        .time-label {
+          color: rgba(255,255,255,0.7);
           font-size: 11px;
           font-family: sans-serif;
-        }
-        .timeline-labels span {
-          text-align: center;
-          min-width: 40px;
+          min-width: 36px;
+          text-align: right;
         }
         .status {
           position: absolute;
@@ -167,52 +121,17 @@ class BuienradarRainCard extends HTMLElement {
           </div>
           <div class="controls">
             <button class="play-btn">▶</button>
-            <div class="timeline-container">
-              <div class="timeline">
-                <div class="timeline-track"></div>
-                <div class="timeline-dots"></div>
-                <div class="timeline-handle"></div>
-              </div>
-              <div class="timeline-labels"></div>
+            <div class="timeline">
+              <div class="timeline-progress"></div>
             </div>
+            <span class="time-label">--:--</span>
           </div>
         </div>
       </ha-card>
     `;
 
     this.shadowRoot.querySelector('.play-btn').addEventListener('click', () => this._togglePlay());
-
-    const timeline = this.shadowRoot.querySelector('.timeline');
-    const handle = this.shadowRoot.querySelector('.timeline-handle');
-
-    timeline.addEventListener('click', (e) => this._seekTo(e));
-
-    // Drag handling
-    let dragging = false;
-    handle.addEventListener('mousedown', (e) => {
-      dragging = true;
-      this._pause();
-      e.preventDefault();
-    });
-    document.addEventListener('mousemove', (e) => {
-      if (dragging) this._dragTo(e);
-    });
-    document.addEventListener('mouseup', () => {
-      dragging = false;
-    });
-
-    // Touch support
-    handle.addEventListener('touchstart', (e) => {
-      dragging = true;
-      this._pause();
-      e.preventDefault();
-    });
-    document.addEventListener('touchmove', (e) => {
-      if (dragging) this._dragTo(e.touches[0]);
-    });
-    document.addEventListener('touchend', () => {
-      dragging = false;
-    });
+    this.shadowRoot.querySelector('.timeline').addEventListener('click', (e) => this._seekTo(e));
   }
 
   _initMap() {
@@ -220,12 +139,14 @@ class BuienradarRainCard extends HTMLElement {
 
     // Bounds: SW [49.5, 0] to NE [54.8, 10]
     const bounds = [[49.5, 0], [54.8, 10]];
-    const center = [52.15, 5]; // Center of Netherlands/Belgium
 
     this._map = L.map(mapContainer, {
       attributionControl: false,
       zoomControl: false,
-    }).setView(center, 7);
+      maxBounds: bounds,
+      maxBoundsViscosity: 1.0,
+      minZoom: 7,
+    }).fitBounds(bounds);
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
@@ -310,8 +231,6 @@ class BuienradarRainCard extends HTMLElement {
     this._initMap();
     this._overlay = L.imageOverlay(this._frameUrls[0], this._bounds, { opacity: 0.6 }).addTo(this._map);
 
-    this._buildTimeline();
-
     // Find frame closest to now + 15 minutes
     const targetTime = Date.now() + 15 * 60 * 1000;
     let closestFrame = 0;
@@ -335,37 +254,6 @@ class BuienradarRainCard extends HTMLElement {
     this._showFrame(closestFrame);
   }
 
-  _buildTimeline() {
-    const dotsContainer = this.shadowRoot.querySelector('.timeline-dots');
-    const labelsContainer = this.shadowRoot.querySelector('.timeline-labels');
-
-    for (let i = 0; i < this._frameUrls.length; i++) {
-      const dot = document.createElement('div');
-      dot.className = 'timeline-dot';
-      dotsContainer.appendChild(dot);
-    }
-
-    const labelInterval = 5;
-    for (let i = 0; i < this._frameTimes.length; i += labelInterval) {
-      const timeStr = this._frameTimes[i];
-      if (timeStr) {
-        const h = timeStr.slice(8, 10);
-        const m = timeStr.slice(10, 12);
-        const label = document.createElement('span');
-        label.textContent = `${h}:${m}`;
-        labelsContainer.appendChild(label);
-      }
-    }
-    const lastTimeStr = this._frameTimes[this._frameTimes.length - 1];
-    if (lastTimeStr) {
-      const h = lastTimeStr.slice(8, 10);
-      const m = lastTimeStr.slice(10, 12);
-      const label = document.createElement('span');
-      label.textContent = `${h}:${m}`;
-      labelsContainer.appendChild(label);
-    }
-  }
-
   _formatDateTime(date) {
     const y = date.getUTCFullYear();
     const m = String(date.getUTCMonth() + 1).padStart(2, '0');
@@ -383,7 +271,14 @@ class BuienradarRainCard extends HTMLElement {
     }
 
     const percent = (index / (this._frameUrls.length - 1)) * 100;
-    this.shadowRoot.querySelector('.timeline-handle').style.left = `${percent}%`;
+    this.shadowRoot.querySelector('.timeline-progress').style.width = `${percent}%`;
+
+    const timeStr = this._frameTimes[index];
+    if (timeStr) {
+      const h = timeStr.slice(8, 10);
+      const m = timeStr.slice(10, 12);
+      this.shadowRoot.querySelector('.time-label').textContent = `${h}:${m}`;
+    }
   }
 
   _togglePlay() {
@@ -410,14 +305,6 @@ class BuienradarRainCard extends HTMLElement {
   }
 
   _seekTo(e) {
-    const timeline = this.shadowRoot.querySelector('.timeline');
-    const rect = timeline.getBoundingClientRect();
-    const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const frame = Math.round(percent * (this._frameUrls.length - 1));
-    this._showFrame(frame);
-  }
-
-  _dragTo(e) {
     const timeline = this.shadowRoot.querySelector('.timeline');
     const rect = timeline.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));

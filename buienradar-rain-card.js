@@ -1,3 +1,14 @@
+const DEFAULTS = {
+  lat: 50.79,
+  lon: 4.41,
+  zoom: 9,
+  autoplay: false,
+  timeOffset: 15,
+  animationSpeed: 200,
+  opacity: 0.7,
+  showMarker: false,
+};
+
 class BuienradarRainCard extends HTMLElement {
   constructor() {
     super();
@@ -9,6 +20,7 @@ class BuienradarRainCard extends HTMLElement {
     this._intervalId = null;
     this._map = null;
     this._overlay = null;
+    this._marker = null;
   }
 
   set hass(hass) {
@@ -16,23 +28,29 @@ class BuienradarRainCard extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = config;
+    this._config = { ...DEFAULTS, ...config };
     this._loadLeaflet().then(() => {
       this._render();
       this._loadImages();
     });
   }
 
+  static getConfigElement() {
+    return document.createElement('buienradar-rain-card-editor');
+  }
+
+  static getStubConfig() {
+    return { ...DEFAULTS };
+  }
+
   async _loadLeaflet() {
     if (window.L) return;
 
-    // Load Leaflet CSS
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
     document.head.appendChild(link);
 
-    // Load Leaflet JS
     await new Promise((resolve) => {
       const script = document.createElement('script');
       script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
@@ -145,8 +163,8 @@ class BuienradarRainCard extends HTMLElement {
 
   _initMap() {
     const mapContainer = this.shadowRoot.querySelector('.map-container');
+    const { lat, lon, zoom, opacity, showMarker } = this._config;
 
-    // Bounds: SW [49.5, 0] to NE [54.8, 10]
     const bounds = [[49.5, 0], [54.8, 10]];
 
     this._map = L.map(mapContainer, {
@@ -155,14 +173,23 @@ class BuienradarRainCard extends HTMLElement {
       maxBounds: bounds,
       maxBoundsViscosity: 1.0,
       minZoom: 7,
-    }).setView([50.79, 4.41], 9);
+    }).setView([lat, lon], zoom);
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
     }).addTo(this._map);
 
-    // Create overlay with first frame (will be updated)
     this._bounds = bounds;
+
+    if (showMarker) {
+      const markerIcon = L.divIcon({
+        className: 'custom-marker',
+        html: '<div style="width:12px;height:12px;background:#5a9fcf;border:2px solid white;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6],
+      });
+      this._marker = L.marker([lat, lon], { icon: markerIcon }).addTo(this._map);
+    }
   }
 
   async _findLatestRun() {
@@ -195,6 +222,7 @@ class BuienradarRainCard extends HTMLElement {
 
   async _loadImages() {
     const status = this.shadowRoot.querySelector('.status');
+    const { opacity, timeOffset, autoplay } = this._config;
 
     const run = await this._findLatestRun();
     if (!run) {
@@ -217,7 +245,6 @@ class BuienradarRainCard extends HTMLElement {
       this._frameTimes.push(frameStr);
     }
 
-    // Preload all images
     const loadPromises = this._frameUrls.map(url =>
       new Promise(resolve => {
         const img = new Image();
@@ -238,10 +265,10 @@ class BuienradarRainCard extends HTMLElement {
     status.style.display = 'none';
 
     this._initMap();
-    this._overlay = L.imageOverlay(this._frameUrls[0], this._bounds, { opacity: 0.7 }).addTo(this._map);
+    this._overlay = L.imageOverlay(this._frameUrls[0], this._bounds, { opacity }).addTo(this._map);
 
-    // Find frame closest to now + 15 minutes
-    const targetTime = Date.now() + 15 * 60 * 1000;
+    // Find frame closest to now + timeOffset minutes
+    const targetTime = Date.now() + timeOffset * 60 * 1000;
     let closestFrame = 0;
     let closestDiff = Infinity;
     for (let i = 0; i < this._frameTimes.length; i++) {
@@ -261,6 +288,10 @@ class BuienradarRainCard extends HTMLElement {
     }
 
     this._showFrame(closestFrame);
+
+    if (autoplay) {
+      this._play();
+    }
   }
 
   _formatDateTime(date) {
@@ -304,7 +335,7 @@ class BuienradarRainCard extends HTMLElement {
     this._intervalId = setInterval(() => {
       const next = (this._currentFrame + 1) % this._frameUrls.length;
       this._showFrame(next);
-    }, 200);
+    }, this._config.animationSpeed);
   }
 
   _pause() {
@@ -324,17 +355,136 @@ class BuienradarRainCard extends HTMLElement {
   getCardSize() {
     return 5;
   }
+}
 
-  static getStubConfig() {
-    return {};
+// Editor element
+class BuienradarRainCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+  }
+
+  setConfig(config) {
+    this._config = { ...DEFAULTS, ...config };
+    this._render();
+  }
+
+  _render() {
+    this.shadowRoot.innerHTML = `
+      <style>
+        .form {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .row {
+          display: flex;
+          gap: 16px;
+        }
+        .field {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        label {
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--primary-text-color);
+        }
+        input, select {
+          padding: 8px;
+          border: 1px solid var(--divider-color);
+          border-radius: 4px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+        }
+        .checkbox-field {
+          flex-direction: row;
+          align-items: center;
+          gap: 8px;
+        }
+        .checkbox-field input {
+          width: auto;
+        }
+      </style>
+      <div class="form">
+        <div class="row">
+          <div class="field">
+            <label>Latitude</label>
+            <input type="number" step="0.01" id="lat" value="${this._config.lat}">
+          </div>
+          <div class="field">
+            <label>Longitude</label>
+            <input type="number" step="0.01" id="lon" value="${this._config.lon}">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Zoom (7-19)</label>
+            <input type="number" min="7" max="19" id="zoom" value="${this._config.zoom}">
+          </div>
+          <div class="field">
+            <label>Time Offset (min)</label>
+            <input type="number" id="timeOffset" value="${this._config.timeOffset}">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Animation Speed (ms)</label>
+            <input type="number" min="50" max="1000" step="50" id="animationSpeed" value="${this._config.animationSpeed}">
+          </div>
+          <div class="field">
+            <label>Overlay Opacity</label>
+            <input type="number" min="0.1" max="1" step="0.1" id="opacity" value="${this._config.opacity}">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field checkbox-field">
+            <input type="checkbox" id="autoplay" ${this._config.autoplay ? 'checked' : ''}>
+            <label for="autoplay">Autoplay</label>
+          </div>
+          <div class="field checkbox-field">
+            <input type="checkbox" id="showMarker" ${this._config.showMarker ? 'checked' : ''}>
+            <label for="showMarker">Show Location Marker</label>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Add event listeners
+    ['lat', 'lon', 'zoom', 'timeOffset', 'animationSpeed', 'opacity'].forEach(id => {
+      this.shadowRoot.getElementById(id).addEventListener('change', (e) => {
+        this._config[id] = parseFloat(e.target.value);
+        this._fireChange();
+      });
+    });
+
+    ['autoplay', 'showMarker'].forEach(id => {
+      this.shadowRoot.getElementById(id).addEventListener('change', (e) => {
+        this._config[id] = e.target.checked;
+        this._fireChange();
+      });
+    });
+  }
+
+  _fireChange() {
+    const event = new CustomEvent('config-changed', {
+      detail: { config: this._config },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
   }
 }
 
 customElements.define('buienradar-rain-card', BuienradarRainCard);
+customElements.define('buienradar-rain-card-editor', BuienradarRainCardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'buienradar-rain-card',
   name: 'Buienradar Rain Card',
-  description: 'A simple rain radar card using Buienradar data'
+  description: 'A simple rain radar card using Buienradar data',
+  preview: true,
 });

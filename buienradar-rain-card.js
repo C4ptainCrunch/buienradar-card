@@ -2,10 +2,13 @@ class BuienradarRainCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
-    this._images = [];
+    this._frameUrls = [];
+    this._frameTimes = [];
     this._currentFrame = 0;
     this._playing = false;
     this._intervalId = null;
+    this._map = null;
+    this._overlay = null;
   }
 
   set hass(hass) {
@@ -14,13 +17,34 @@ class BuienradarRainCard extends HTMLElement {
 
   setConfig(config) {
     this._config = config;
-    this._render();
-    this._loadImages();
+    this._loadLeaflet().then(() => {
+      this._render();
+      this._loadImages();
+    });
+  }
+
+  async _loadLeaflet() {
+    if (window.L) return;
+
+    // Load Leaflet CSS
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+
+    // Load Leaflet JS
+    await new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      script.onload = resolve;
+      document.head.appendChild(script);
+    });
   }
 
   _render() {
     this.shadowRoot.innerHTML = `
       <style>
+        @import url('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
         :host {
           display: block;
         }
@@ -31,24 +55,9 @@ class BuienradarRainCard extends HTMLElement {
           border-radius: 12px;
           overflow: hidden;
         }
-        .radar-frame {
+        .map-container {
           width: 100%;
           aspect-ratio: 1;
-          background: #0d1117;
-          position: relative;
-        }
-        .overlay-img {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          opacity: 0;
-          will-change: opacity;
-        }
-        .overlay-img.active {
-          opacity: 1;
         }
         .controls {
           display: flex;
@@ -142,6 +151,10 @@ class BuienradarRainCard extends HTMLElement {
           color: white;
           font-family: sans-serif;
           text-align: center;
+          z-index: 1000;
+          background: rgba(0,0,0,0.7);
+          padding: 10px 20px;
+          border-radius: 8px;
         }
         .error {
           color: #ff6b6b;
@@ -149,7 +162,7 @@ class BuienradarRainCard extends HTMLElement {
       </style>
       <ha-card>
         <div class="container">
-          <div class="radar-frame">
+          <div class="map-container">
             <div class="status">Loading radar...</div>
           </div>
           <div class="controls">
@@ -202,11 +215,30 @@ class BuienradarRainCard extends HTMLElement {
     });
   }
 
+  _initMap() {
+    const mapContainer = this.shadowRoot.querySelector('.map-container');
+
+    // Bounds: SW [49.5, 0] to NE [54.8, 10]
+    const bounds = [[49.5, 0], [54.8, 10]];
+    const center = [52.15, 5]; // Center of Netherlands/Belgium
+
+    this._map = L.map(mapContainer, {
+      attributionControl: false,
+      zoomControl: false,
+    }).setView(center, 7);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+    }).addTo(this._map);
+
+    // Create overlay with first frame (will be updated)
+    this._bounds = bounds;
+  }
+
   async _findLatestRun() {
     const baseUrl = 'https://processing-cdn.buienradar.nl/processing/nl/rain/forecast/runs/webm';
     const now = new Date();
 
-    // Try run times going backwards in 5-minute increments
     for (let offset = 5; offset <= 30; offset += 5) {
       const runTime = new Date(now);
       const runMinutes = Math.floor(now.getUTCMinutes() / 5) * 5 - offset;
@@ -217,7 +249,6 @@ class BuienradarRainCard extends HTMLElement {
       }
 
       const runStr = this._formatDateTime(runTime);
-      // Test if this run exists by checking first frame
       const testUrl = `${baseUrl}/${runStr}/${runStr}.png`;
 
       try {
@@ -226,15 +257,14 @@ class BuienradarRainCard extends HTMLElement {
           return { runTime, runStr };
         }
       } catch (e) {
-        // Continue to next offset
+        // Continue
       }
     }
     return null;
   }
 
   async _loadImages() {
-    const frame = this.shadowRoot.querySelector('.radar-frame');
-    const status = frame.querySelector('.status');
+    const status = this.shadowRoot.querySelector('.status');
 
     const run = await this._findLatestRun();
     if (!run) {
@@ -246,63 +276,78 @@ class BuienradarRainCard extends HTMLElement {
     const { runTime, runStr } = run;
     const baseUrl = 'https://processing-cdn.buienradar.nl/processing/nl/rain/forecast/runs/webm';
 
-    // Generate frame times: from run time to +3 hours in 5-minute steps
-    this._images = [];
+    this._frameUrls = [];
+    this._frameTimes = [];
 
-    for (let i = 0; i <= 36; i++) { // 36 * 5min = 3 hours
+    for (let i = 0; i <= 36; i++) {
       const frameTime = new Date(runTime.getTime() + i * 5 * 60 * 1000);
       const frameStr = this._formatDateTime(frameTime);
       const url = `${baseUrl}/${runStr}/${frameStr}.png`;
-
-      const img = document.createElement('img');
-      img.className = 'overlay-img';
-      img.src = url;
-      img.dataset.time = frameStr;
-      frame.appendChild(img);
-      this._images.push(img);
+      this._frameUrls.push(url);
+      this._frameTimes.push(frameStr);
     }
 
-    // Wait for ALL images to load
-    const loadPromises = this._images.map(img =>
+    // Preload all images
+    const loadPromises = this._frameUrls.map(url =>
       new Promise(resolve => {
-        if (img.complete) {
-          resolve();
-        } else {
-          img.onload = resolve;
-          img.onerror = resolve;
-        }
+        const img = new Image();
+        img.onload = resolve;
+        img.onerror = resolve;
+        img.src = url;
       })
     );
 
     let loaded = 0;
     loadPromises.forEach(p => p.then(() => {
       loaded++;
-      status.textContent = `Loading radar... ${Math.round(loaded / this._images.length * 100)}%`;
+      status.textContent = `Loading radar... ${Math.round(loaded / this._frameUrls.length * 100)}%`;
     }));
 
     await Promise.all(loadPromises);
 
     status.style.display = 'none';
+
+    this._initMap();
+    this._overlay = L.imageOverlay(this._frameUrls[0], this._bounds, { opacity: 0.6 }).addTo(this._map);
+
     this._buildTimeline();
-    this._showFrame(0);
-    this._play();
+
+    // Find frame closest to now + 15 minutes
+    const targetTime = Date.now() + 15 * 60 * 1000;
+    let closestFrame = 0;
+    let closestDiff = Infinity;
+    for (let i = 0; i < this._frameTimes.length; i++) {
+      const t = this._frameTimes[i];
+      const frameDate = Date.UTC(
+        parseInt(t.slice(0, 4)),
+        parseInt(t.slice(4, 6)) - 1,
+        parseInt(t.slice(6, 8)),
+        parseInt(t.slice(8, 10)),
+        parseInt(t.slice(10, 12))
+      );
+      const diff = Math.abs(frameDate - targetTime);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        closestFrame = i;
+      }
+    }
+
+    this._showFrame(closestFrame);
   }
 
   _buildTimeline() {
     const dotsContainer = this.shadowRoot.querySelector('.timeline-dots');
     const labelsContainer = this.shadowRoot.querySelector('.timeline-labels');
 
-    // Add dots for each frame
-    for (let i = 0; i < this._images.length; i++) {
+    for (let i = 0; i < this._frameUrls.length; i++) {
       const dot = document.createElement('div');
       dot.className = 'timeline-dot';
       dotsContainer.appendChild(dot);
     }
 
-    // Add time labels (every ~25 minutes = 5 frames)
     const labelInterval = 5;
-    for (let i = 0; i < this._images.length; i += labelInterval) {
-      const timeStr = this._images[i]?.dataset.time;
+    for (let i = 0; i < this._frameTimes.length; i += labelInterval) {
+      const timeStr = this._frameTimes[i];
       if (timeStr) {
         const h = timeStr.slice(8, 10);
         const m = timeStr.slice(10, 12);
@@ -311,8 +356,7 @@ class BuienradarRainCard extends HTMLElement {
         labelsContainer.appendChild(label);
       }
     }
-    // Add last label
-    const lastTimeStr = this._images[this._images.length - 1]?.dataset.time;
+    const lastTimeStr = this._frameTimes[this._frameTimes.length - 1];
     if (lastTimeStr) {
       const h = lastTimeStr.slice(8, 10);
       const m = lastTimeStr.slice(10, 12);
@@ -332,18 +376,13 @@ class BuienradarRainCard extends HTMLElement {
   }
 
   _showFrame(index) {
-    const prevFrame = this._currentFrame;
     this._currentFrame = index;
 
-    // Only toggle the frames that changed
-    if (prevFrame !== undefined && this._images[prevFrame]) {
-      this._images[prevFrame].classList.remove('active');
-    }
-    if (this._images[index]) {
-      this._images[index].classList.add('active');
+    if (this._overlay) {
+      this._overlay.setUrl(this._frameUrls[index]);
     }
 
-    const percent = (index / (this._images.length - 1)) * 100;
+    const percent = (index / (this._frameUrls.length - 1)) * 100;
     this.shadowRoot.querySelector('.timeline-handle').style.left = `${percent}%`;
   }
 
@@ -359,7 +398,7 @@ class BuienradarRainCard extends HTMLElement {
     this._playing = true;
     this.shadowRoot.querySelector('.play-btn').textContent = '⏸';
     this._intervalId = setInterval(() => {
-      const next = (this._currentFrame + 1) % this._images.length;
+      const next = (this._currentFrame + 1) % this._frameUrls.length;
       this._showFrame(next);
     }, 200);
   }
@@ -374,7 +413,7 @@ class BuienradarRainCard extends HTMLElement {
     const timeline = this.shadowRoot.querySelector('.timeline');
     const rect = timeline.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const frame = Math.round(percent * (this._images.length - 1));
+    const frame = Math.round(percent * (this._frameUrls.length - 1));
     this._showFrame(frame);
   }
 
@@ -382,12 +421,12 @@ class BuienradarRainCard extends HTMLElement {
     const timeline = this.shadowRoot.querySelector('.timeline');
     const rect = timeline.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const frame = Math.round(percent * (this._images.length - 1));
+    const frame = Math.round(percent * (this._frameUrls.length - 1));
     this._showFrame(frame);
   }
 
   getCardSize() {
-    return 4;
+    return 5;
   }
 
   static getStubConfig() {

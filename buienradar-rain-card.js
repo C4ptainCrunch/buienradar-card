@@ -51,49 +51,56 @@ class BuienradarRainCard extends HTMLElement {
         .container {
           position: relative;
           width: 100%;
-          background: #1a1a2e;
+          background: #f5f5f5;
           border-radius: 12px;
           overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         .map-container {
           width: 100%;
           aspect-ratio: 1;
+        }
+        .map-container .leaflet-overlay-pane img {
+          filter: hue-rotate(-60deg) saturate(2.5) brightness(0.9);
         }
         .controls {
           display: flex;
           align-items: center;
           gap: 8px;
           padding: 8px 12px;
-          background: rgba(0,0,0,0.5);
+          background: rgba(255,255,255,0.9);
+          border-top: 1px solid rgba(0,0,0,0.06);
         }
         .play-btn {
           background: none;
           border: none;
           cursor: pointer;
-          color: rgba(255,255,255,0.8);
+          color: #5a7a9a;
           font-size: 12px;
           padding: 4px;
           flex-shrink: 0;
         }
         .play-btn:hover {
-          color: white;
+          color: #3a5a7a;
         }
         .timeline {
           flex: 1;
-          height: 4px;
-          background: rgba(255,255,255,0.2);
+          height: 3px;
+          background: rgba(0,0,0,0.1);
+          border-radius: 2px;
           cursor: pointer;
           position: relative;
         }
         .timeline-progress {
           height: 100%;
-          background: rgba(255,255,255,0.6);
+          background: #5a9fcf;
+          border-radius: 2px;
           width: 0%;
         }
         .time-label {
-          color: rgba(255,255,255,0.7);
+          color: #5a7a9a;
           font-size: 11px;
-          font-family: sans-serif;
+          font-family: -apple-system, BlinkMacSystemFont, sans-serif;
           min-width: 36px;
           text-align: right;
         }
@@ -102,16 +109,18 @@ class BuienradarRainCard extends HTMLElement {
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
-          color: white;
-          font-family: sans-serif;
+          color: #5a7a9a;
+          font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+          font-size: 13px;
           text-align: center;
           z-index: 1000;
-          background: rgba(0,0,0,0.7);
+          background: rgba(255,255,255,0.95);
           padding: 10px 20px;
           border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         .error {
-          color: #ff6b6b;
+          color: #d9534f;
         }
       </style>
       <ha-card>
@@ -146,9 +155,9 @@ class BuienradarRainCard extends HTMLElement {
       maxBounds: bounds,
       maxBoundsViscosity: 1.0,
       minZoom: 7,
-    }).fitBounds(bounds);
+    }).setView([50.79, 4.41], 9);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
     }).addTo(this._map);
 
@@ -229,7 +238,7 @@ class BuienradarRainCard extends HTMLElement {
     status.style.display = 'none';
 
     this._initMap();
-    this._overlay = L.imageOverlay(this._frameUrls[0], this._bounds, { opacity: 0.6 }).addTo(this._map);
+    this._overlay = L.imageOverlay(this._frameUrls[0], this._bounds, { opacity: 0.7 }).addTo(this._map);
 
     // Find frame closest to now + 15 minutes
     const targetTime = Date.now() + 15 * 60 * 1000;

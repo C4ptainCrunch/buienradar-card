@@ -359,20 +359,77 @@ class BuienradarRainCard extends HTMLElement {
 
 // Editor element
 class BuienradarRainCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: 'open' });
-  }
-
   setConfig(config) {
     this._config = { ...DEFAULTS, ...config };
     this._render();
   }
 
   _render() {
-    this.shadowRoot.innerHTML = `
+    this.innerHTML = `
+      <div class="card-config">
+        <div class="row">
+          <ha-textfield
+            label="Latitude"
+            type="number"
+            step="0.01"
+            id="lat"
+            value="${this._config.lat}"
+          ></ha-textfield>
+          <ha-textfield
+            label="Longitude"
+            type="number"
+            step="0.01"
+            id="lon"
+            value="${this._config.lon}"
+          ></ha-textfield>
+        </div>
+        <div class="row">
+          <ha-textfield
+            label="Zoom (7-19)"
+            type="number"
+            min="7"
+            max="19"
+            id="zoom"
+            value="${this._config.zoom}"
+          ></ha-textfield>
+          <ha-textfield
+            label="Time Offset (min)"
+            type="number"
+            id="timeOffset"
+            value="${this._config.timeOffset}"
+          ></ha-textfield>
+        </div>
+        <div class="row">
+          <ha-textfield
+            label="Animation Speed (ms)"
+            type="number"
+            min="50"
+            max="1000"
+            step="50"
+            id="animationSpeed"
+            value="${this._config.animationSpeed}"
+          ></ha-textfield>
+          <ha-textfield
+            label="Overlay Opacity"
+            type="number"
+            min="0.1"
+            max="1"
+            step="0.1"
+            id="opacity"
+            value="${this._config.opacity}"
+          ></ha-textfield>
+        </div>
+        <div class="row switches">
+          <ha-formfield label="Autoplay">
+            <ha-switch id="autoplay" ${this._config.autoplay ? 'checked' : ''}></ha-switch>
+          </ha-formfield>
+          <ha-formfield label="Show Location Marker">
+            <ha-switch id="showMarker" ${this._config.showMarker ? 'checked' : ''}></ha-switch>
+          </ha-formfield>
+        </div>
+      </div>
       <style>
-        .form {
+        .card-config {
           display: flex;
           flex-direction: column;
           gap: 16px;
@@ -381,87 +438,30 @@ class BuienradarRainCardEditor extends HTMLElement {
           display: flex;
           gap: 16px;
         }
-        .field {
+        .row ha-textfield {
           flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
         }
-        label {
-          font-size: 12px;
-          font-weight: 500;
-          color: var(--primary-text-color);
+        .switches {
+          flex-wrap: wrap;
         }
-        input, select {
-          padding: 8px;
-          border: 1px solid var(--divider-color);
-          border-radius: 4px;
-          background: var(--card-background-color);
-          color: var(--primary-text-color);
-        }
-        .checkbox-field {
-          flex-direction: row;
-          align-items: center;
-          gap: 8px;
-        }
-        .checkbox-field input {
-          width: auto;
+        .switches ha-formfield {
+          flex: 1;
+          min-width: 150px;
         }
       </style>
-      <div class="form">
-        <div class="row">
-          <div class="field">
-            <label>Latitude</label>
-            <input type="number" step="0.01" id="lat" value="${this._config.lat}">
-          </div>
-          <div class="field">
-            <label>Longitude</label>
-            <input type="number" step="0.01" id="lon" value="${this._config.lon}">
-          </div>
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Zoom (7-19)</label>
-            <input type="number" min="7" max="19" id="zoom" value="${this._config.zoom}">
-          </div>
-          <div class="field">
-            <label>Time Offset (min)</label>
-            <input type="number" id="timeOffset" value="${this._config.timeOffset}">
-          </div>
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Animation Speed (ms)</label>
-            <input type="number" min="50" max="1000" step="50" id="animationSpeed" value="${this._config.animationSpeed}">
-          </div>
-          <div class="field">
-            <label>Overlay Opacity</label>
-            <input type="number" min="0.1" max="1" step="0.1" id="opacity" value="${this._config.opacity}">
-          </div>
-        </div>
-        <div class="row">
-          <div class="field checkbox-field">
-            <input type="checkbox" id="autoplay" ${this._config.autoplay ? 'checked' : ''}>
-            <label for="autoplay">Autoplay</label>
-          </div>
-          <div class="field checkbox-field">
-            <input type="checkbox" id="showMarker" ${this._config.showMarker ? 'checked' : ''}>
-            <label for="showMarker">Show Location Marker</label>
-          </div>
-        </div>
-      </div>
     `;
 
-    // Add event listeners
+    // Add event listeners for text fields
     ['lat', 'lon', 'zoom', 'timeOffset', 'animationSpeed', 'opacity'].forEach(id => {
-      this.shadowRoot.getElementById(id).addEventListener('change', (e) => {
+      this.querySelector(`#${id}`).addEventListener('change', (e) => {
         this._config[id] = parseFloat(e.target.value);
         this._fireChange();
       });
     });
 
+    // Add event listeners for switches
     ['autoplay', 'showMarker'].forEach(id => {
-      this.shadowRoot.getElementById(id).addEventListener('change', (e) => {
+      this.querySelector(`#${id}`).addEventListener('change', (e) => {
         this._config[id] = e.target.checked;
         this._fireChange();
       });

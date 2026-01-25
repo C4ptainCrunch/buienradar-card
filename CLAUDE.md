@@ -50,18 +50,6 @@ filter: hue-rotate(-60deg) saturate(2.5) brightness(0.9);
 - **Shadow DOM**: Card uses shadow DOM for style isolation
 - **Editor**: Uses native HA components (ha-textfield, ha-switch)
 
-## Configuration Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| lat/lon | zone.home | Map center |
-| zoom | 9 | Zoom level (7-19) |
-| timeOffset | 15 | Default frame offset in minutes |
-| animationSpeed | 200 | Ms between frames |
-| opacity | 0.7 | Overlay opacity |
-| autoplay | false | Auto-start animation |
-| showMarker | true | Show location dot |
-
 ## Notes
 
 - Card height is controlled by HA dashboard layout, not fixed

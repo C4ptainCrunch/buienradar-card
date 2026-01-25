@@ -32,6 +32,9 @@ All options are configurable via the visual editor. Click "Edit" on the card to 
 | `opacity` | 0.7 | Rain overlay opacity (0.1-1.0) |
 | `autoplay` | false | Auto-start animation |
 | `showMarker` | true | Show location marker on map |
+| `refreshInterval` | 30 | Auto-refresh interval in minutes (0=off, min 5) |
+
+
 
 
 ## License

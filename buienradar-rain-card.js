@@ -63,18 +63,26 @@ class BuienradarRainCard extends HTMLElement {
         @import url('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
         :host {
           display: block;
+          height: 100%;
+        }
+        ha-card {
+          height: 100%;
         }
         .container {
           position: relative;
           width: 100%;
+          height: 100%;
           background: #f5f5f5;
           border-radius: 12px;
           overflow: hidden;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          display: flex;
+          flex-direction: column;
         }
         .map-container {
           width: 100%;
-          aspect-ratio: 1;
+          flex: 1;
+          min-height: 200px;
         }
         .map-container .leaflet-overlay-pane img {
           filter: hue-rotate(-60deg) saturate(2.5) brightness(0.9);

@@ -163,7 +163,7 @@ class BuienradarRainCard extends HTMLElement {
     const mapContainer = this.shadowRoot.querySelector('.map-container');
     const { zoom, showMarker } = this._config;
 
-    // Use config coords, or fall back to home zone, or defaults
+    // Use config coords, or fall back to home zone
     let lat = this._config.lat;
     let lon = this._config.lon;
     if (lat === undefined || lon === undefined) {
@@ -173,8 +173,6 @@ class BuienradarRainCard extends HTMLElement {
         lon = lon ?? homeZone.attributes.longitude;
       }
     }
-    lat = lat ?? 50.79;
-    lon = lon ?? 4.41;
 
     const bounds = [[49.5, 0], [54.8, 10]];
 

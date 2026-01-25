@@ -2,7 +2,11 @@
 
 A Home Assistant custom card showing Buienradar rain radar forecast for Belgium/Netherlands.
 
-> **Note**: This project was built by with Claude Code. 
+> **Note**: This project was built by with Claude Code.
+
+![Card screenshot](screenshots/card.png)
+
+![Editor screenshot](screenshots/editor.png)
 
 ## Installation
 

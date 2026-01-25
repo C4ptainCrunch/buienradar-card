@@ -8,6 +8,9 @@ const DEFAULTS = {
   refreshInterval: 30,
 };
 
+const RADAR_URL = 'https://processing-cdn.buienradar.nl/processing/nl/rain/forecast/runs/webm';
+const BOUNDS = [[49.5, 0], [54.8, 10]];
+
 class BuienradarRainCard extends HTMLElement {
   constructor() {
     super();
@@ -18,15 +21,11 @@ class BuienradarRainCard extends HTMLElement {
     this._playing = false;
     this._intervalId = null;
     this._refreshTimerId = null;
-    this._userSeeked = false;
-    this._map = null;
-    this._overlay = null;
-    this._marker = null;
   }
 
   disconnectedCallback() {
-    if (this._intervalId) clearInterval(this._intervalId);
-    if (this._refreshTimerId) clearInterval(this._refreshTimerId);
+    clearInterval(this._intervalId);
+    clearInterval(this._refreshTimerId);
   }
 
   set hass(hass) {
@@ -51,7 +50,6 @@ class BuienradarRainCard extends HTMLElement {
 
   async _loadLeaflet() {
     if (window.L) return;
-
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
@@ -69,13 +67,8 @@ class BuienradarRainCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         @import url('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
-        :host {
-          display: block;
-          height: 100%;
-        }
-        ha-card {
-          height: 100%;
-        }
+        :host { display: block; height: 100%; }
+        ha-card { height: 100%; }
         .container {
           position: relative;
           width: 100%;
@@ -110,18 +103,14 @@ class BuienradarRainCard extends HTMLElement {
           color: #5a7a9a;
           font-size: 12px;
           padding: 4px;
-          flex-shrink: 0;
         }
-        .play-btn:hover {
-          color: #3a5a7a;
-        }
+        .play-btn:hover { color: #3a5a7a; }
         .timeline {
           flex: 1;
           height: 3px;
           background: rgba(0,0,0,0.1);
           border-radius: 2px;
           cursor: pointer;
-          position: relative;
         }
         .timeline-progress {
           height: 100%;
@@ -144,16 +133,13 @@ class BuienradarRainCard extends HTMLElement {
           color: #5a7a9a;
           font-family: -apple-system, BlinkMacSystemFont, sans-serif;
           font-size: 13px;
-          text-align: center;
           z-index: 1000;
           background: rgba(255,255,255,0.95);
           padding: 10px 20px;
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
-        .error {
-          color: #d9534f;
-        }
+        .error { color: #d9534f; }
       </style>
       <ha-card>
         <div class="container">
@@ -162,40 +148,34 @@ class BuienradarRainCard extends HTMLElement {
           </div>
           <div class="controls">
             <button class="play-btn">▶</button>
-            <div class="timeline">
-              <div class="timeline-progress"></div>
-            </div>
+            <div class="timeline"><div class="timeline-progress"></div></div>
             <span class="time-label">--:--</span>
           </div>
         </div>
       </ha-card>
     `;
-
     this.shadowRoot.querySelector('.play-btn').addEventListener('click', () => this._togglePlay());
     this.shadowRoot.querySelector('.timeline').addEventListener('click', (e) => this._seekTo(e));
   }
 
-  _initMap() {
-    const mapContainer = this.shadowRoot.querySelector('.map-container');
-    const { zoom, showMarker } = this._config;
-
-    // Use config coords, or fall back to home zone
-    let lat = this._config.lat;
-    let lon = this._config.lon;
+  _getCoords() {
+    let { lat, lon } = this._config;
     if (lat === undefined || lon === undefined) {
-      const homeZone = this._hass?.states?.['zone.home'];
-      if (homeZone) {
-        lat = lat ?? homeZone.attributes.latitude;
-        lon = lon ?? homeZone.attributes.longitude;
-      }
+      const home = this._hass?.states?.['zone.home']?.attributes;
+      lat = lat ?? home?.latitude;
+      lon = lon ?? home?.longitude;
     }
+    return [lat, lon];
+  }
 
-    const bounds = [[49.5, 0], [54.8, 10]];
+  _initMap() {
+    const [lat, lon] = this._getCoords();
+    const { zoom, showMarker, opacity } = this._config;
 
-    this._map = L.map(mapContainer, {
+    this._map = L.map(this.shadowRoot.querySelector('.map-container'), {
       attributionControl: false,
       zoomControl: false,
-      maxBounds: bounds,
+      maxBounds: BOUNDS,
       maxBoundsViscosity: 1.0,
       minZoom: 7,
     }).setView([lat, lon], zoom);
@@ -204,133 +184,56 @@ class BuienradarRainCard extends HTMLElement {
       maxZoom: 19,
     }).addTo(this._map);
 
-    this._bounds = bounds;
-
-    // Click on map toggles play/pause
     this._map.on('click', () => this._togglePlay());
 
     if (showMarker) {
-      const markerIcon = L.divIcon({
+      const icon = L.divIcon({
         className: 'custom-marker',
         html: '<div style="width:12px;height:12px;background:#5a9fcf;border:2px solid white;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
         iconSize: [12, 12],
         iconAnchor: [6, 6],
       });
-      this._marker = L.marker([lat, lon], { icon: markerIcon }).addTo(this._map);
+      L.marker([lat, lon], { icon }).addTo(this._map);
     }
+
+    this._overlay = L.imageOverlay(this._frameUrls[0], BOUNDS, { opacity }).addTo(this._map);
+  }
+
+  _formatTime(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}`;
+  }
+
+  _parseTime(str) {
+    return Date.UTC(+str.slice(0, 4), +str.slice(4, 6) - 1, +str.slice(6, 8), +str.slice(8, 10), +str.slice(10, 12));
   }
 
   async _findLatestRun() {
-    const baseUrl = 'https://processing-cdn.buienradar.nl/processing/nl/rain/forecast/runs/webm';
     const now = new Date();
-
     for (let offset = 5; offset <= 30; offset += 5) {
       const runTime = new Date(now);
-      const runMinutes = Math.floor(now.getUTCMinutes() / 5) * 5 - offset;
-      runTime.setUTCMinutes(runMinutes, 0, 0);
-      if (runMinutes < 0) {
-        runTime.setUTCHours(runTime.getUTCHours() - 1);
-        runTime.setUTCMinutes(60 + runMinutes);
-      }
-
-      const runStr = this._formatDateTime(runTime);
-      const testUrl = `${baseUrl}/${runStr}/${runStr}.png`;
-
+      runTime.setUTCMinutes(Math.floor(now.getUTCMinutes() / 5) * 5 - offset, 0, 0);
+      const runStr = this._formatTime(runTime);
       try {
-        const response = await fetch(testUrl, { method: 'HEAD' });
-        if (response.ok) {
-          return { runTime, runStr };
-        }
-      } catch (e) {
-        // Continue
-      }
+        const res = await fetch(`${RADAR_URL}/${runStr}/${runStr}.png`, { method: 'HEAD' });
+        if (res.ok) return { runTime, runStr };
+      } catch {}
     }
     return null;
   }
 
-  _scheduleRefresh() {
-    if (this._refreshTimerId) clearInterval(this._refreshTimerId);
-    const interval = this._config.refreshInterval;
-    if (interval > 0 && interval >= 5) {
-      this._refreshTimerId = setInterval(() => this._refresh(), interval * 60 * 1000);
-    }
-  }
-
-  async _refresh() {
-    // Save current state
-    const wasPlaying = this._playing;
-    const hadSeeked = this._userSeeked;
-    const currentFrameTime = this._frameTimes[this._currentFrame];
-
-    // Calculate relative offset from now (for playing state)
-    let relativeOffset = 0;
-    if (wasPlaying && currentFrameTime) {
-      const frameDate = Date.UTC(
-        parseInt(currentFrameTime.slice(0, 4)),
-        parseInt(currentFrameTime.slice(4, 6)) - 1,
-        parseInt(currentFrameTime.slice(6, 8)),
-        parseInt(currentFrameTime.slice(8, 10)),
-        parseInt(currentFrameTime.slice(10, 12))
-      );
-      relativeOffset = frameDate - Date.now();
-    }
-
-    // Pause during refresh
-    if (wasPlaying) this._pause();
-
-    // Reload images (preserving map state)
-    await this._loadImages(true);
-
-    // Determine target time based on state
-    let targetTime;
-    if (wasPlaying) {
-      // Was playing: restore relative offset from now
-      targetTime = Date.now() + relativeOffset;
-    } else if (!hadSeeked) {
-      // Paused, never seeked: apply default timeOffset
-      targetTime = Date.now() + this._config.timeOffset * 60 * 1000;
-    } else {
-      // Paused, user seeked: restore absolute timestamp
-      targetTime = Date.UTC(
-        parseInt(currentFrameTime.slice(0, 4)),
-        parseInt(currentFrameTime.slice(4, 6)) - 1,
-        parseInt(currentFrameTime.slice(6, 8)),
-        parseInt(currentFrameTime.slice(8, 10)),
-        parseInt(currentFrameTime.slice(10, 12))
-      );
-    }
-
-    // Find closest frame to target time
-    let closestFrame = 0;
-    let closestDiff = Infinity;
+  _findClosestFrame(targetTime) {
+    let closest = 0, minDiff = Infinity;
     for (let i = 0; i < this._frameTimes.length; i++) {
-      const t = this._frameTimes[i];
-      const frameDate = Date.UTC(
-        parseInt(t.slice(0, 4)),
-        parseInt(t.slice(4, 6)) - 1,
-        parseInt(t.slice(6, 8)),
-        parseInt(t.slice(8, 10)),
-        parseInt(t.slice(10, 12))
-      );
-      const diff = Math.abs(frameDate - targetTime);
-      if (diff < closestDiff) {
-        closestDiff = diff;
-        closestFrame = i;
-      }
+      const diff = Math.abs(this._parseTime(this._frameTimes[i]) - targetTime);
+      if (diff < minDiff) { minDiff = diff; closest = i; }
     }
-    this._showFrame(closestFrame);
-
-    // Restore play state
-    if (wasPlaying) this._play();
+    return closest;
   }
 
   async _loadImages(isRefresh = false) {
     const status = this.shadowRoot.querySelector('.status');
-    const { opacity, timeOffset, autoplay } = this._config;
-
-    if (!isRefresh) {
-      status.style.display = '';
-    }
+    if (!isRefresh) status.style.display = '';
 
     const run = await this._findLatestRun();
     if (!run) {
@@ -341,116 +244,66 @@ class BuienradarRainCard extends HTMLElement {
       return;
     }
 
-    const { runTime, runStr } = run;
-    const baseUrl = 'https://processing-cdn.buienradar.nl/processing/nl/rain/forecast/runs/webm';
-
     this._frameUrls = [];
     this._frameTimes = [];
-
     for (let i = 0; i <= 36; i++) {
-      const frameTime = new Date(runTime.getTime() + i * 5 * 60 * 1000);
-      const frameStr = this._formatDateTime(frameTime);
-      const url = `${baseUrl}/${runStr}/${frameStr}.png`;
-      this._frameUrls.push(url);
+      const frameTime = new Date(run.runTime.getTime() + i * 5 * 60000);
+      const frameStr = this._formatTime(frameTime);
+      this._frameUrls.push(`${RADAR_URL}/${run.runStr}/${frameStr}.png`);
       this._frameTimes.push(frameStr);
     }
 
-    const loadPromises = this._frameUrls.map(url =>
-      new Promise(resolve => {
-        const img = new Image();
-        img.onload = resolve;
-        img.onerror = resolve;
-        img.src = url;
-      })
-    );
-
-    if (!isRefresh) {
-      let loaded = 0;
-      loadPromises.forEach(p => p.then(() => {
-        loaded++;
-        status.textContent = `Loading radar... ${Math.round(loaded / this._frameUrls.length * 100)}%`;
-      }));
-    }
-
-    await Promise.all(loadPromises);
+    await Promise.all(this._frameUrls.map(url => new Promise(r => {
+      const img = new Image();
+      img.onload = img.onerror = r;
+      img.src = url;
+    })));
 
     if (!isRefresh) {
       status.style.display = 'none';
       this._initMap();
-      this._overlay = L.imageOverlay(this._frameUrls[0], this._bounds, { opacity }).addTo(this._map);
-
-      // Find frame closest to now + timeOffset minutes
-      const targetTime = Date.now() + timeOffset * 60 * 1000;
-      let closestFrame = 0;
-      let closestDiff = Infinity;
-      for (let i = 0; i < this._frameTimes.length; i++) {
-        const t = this._frameTimes[i];
-        const frameDate = Date.UTC(
-          parseInt(t.slice(0, 4)),
-          parseInt(t.slice(4, 6)) - 1,
-          parseInt(t.slice(6, 8)),
-          parseInt(t.slice(8, 10)),
-          parseInt(t.slice(10, 12))
-        );
-        const diff = Math.abs(frameDate - targetTime);
-        if (diff < closestDiff) {
-          closestDiff = diff;
-          closestFrame = i;
-        }
-      }
-
-      this._showFrame(closestFrame);
-
-      if (autoplay) {
-        this._play();
-      }
     }
 
-    // Schedule next refresh
+    const startFrame = this._findClosestFrame(Date.now() + this._config.timeOffset * 60000);
+    this._showFrame(startFrame);
+
+    if (!isRefresh && this._config.autoplay) this._play();
     this._scheduleRefresh();
   }
 
-  _formatDateTime(date) {
-    const y = date.getUTCFullYear();
-    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(date.getUTCDate()).padStart(2, '0');
-    const h = String(date.getUTCHours()).padStart(2, '0');
-    const min = String(date.getUTCMinutes()).padStart(2, '0');
-    return `${y}${m}${d}${h}${min}`;
+  _scheduleRefresh() {
+    clearInterval(this._refreshTimerId);
+    const interval = this._config.refreshInterval;
+    if (interval >= 5) {
+      this._refreshTimerId = setInterval(() => this._refresh(), interval * 60000);
+    }
+  }
+
+  async _refresh() {
+    const wasPlaying = this._playing;
+    if (wasPlaying) this._pause();
+    await this._loadImages(true);
+    if (wasPlaying) this._play();
   }
 
   _showFrame(index) {
     this._currentFrame = index;
-
-    if (this._overlay) {
-      this._overlay.setUrl(this._frameUrls[index]);
-    }
-
+    this._overlay?.setUrl(this._frameUrls[index]);
     const percent = (index / (this._frameUrls.length - 1)) * 100;
     this.shadowRoot.querySelector('.timeline-progress').style.width = `${percent}%`;
-
-    const timeStr = this._frameTimes[index];
-    if (timeStr) {
-      const h = timeStr.slice(8, 10);
-      const m = timeStr.slice(10, 12);
-      this.shadowRoot.querySelector('.time-label').textContent = `${h}:${m}`;
-    }
+    const t = this._frameTimes[index];
+    if (t) this.shadowRoot.querySelector('.time-label').textContent = `${t.slice(8, 10)}:${t.slice(10, 12)}`;
   }
 
   _togglePlay() {
-    if (this._playing) {
-      this._pause();
-    } else {
-      this._play();
-    }
+    this._playing ? this._pause() : this._play();
   }
 
   _play() {
     this._playing = true;
     this.shadowRoot.querySelector('.play-btn').textContent = '⏸';
     this._intervalId = setInterval(() => {
-      const next = (this._currentFrame + 1) % this._frameUrls.length;
-      this._showFrame(next);
+      this._showFrame((this._currentFrame + 1) % this._frameUrls.length);
     }, this._config.animationSpeed);
   }
 
@@ -461,190 +314,66 @@ class BuienradarRainCard extends HTMLElement {
   }
 
   _seekTo(e) {
-    this._userSeeked = true;
-    const timeline = this.shadowRoot.querySelector('.timeline');
-    const rect = timeline.getBoundingClientRect();
+    const rect = e.currentTarget.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const frame = Math.round(percent * (this._frameUrls.length - 1));
-    this._showFrame(frame);
+    this._showFrame(Math.round(percent * (this._frameUrls.length - 1)));
   }
 
-  getCardSize() {
-    return 5;
-  }
+  getCardSize() { return 5; }
 }
 
-// Editor element
 class BuienradarRainCardEditor extends HTMLElement {
-  set hass(hass) {
-    this._hass = hass;
-    // Update lat/lon placeholders if not yet set
-    if (this._rendered && !this._config.lat && !this._config.lon) {
-      const homeZone = hass?.states?.['zone.home'];
-      if (homeZone) {
-        const latField = this.querySelector('#lat');
-        const lonField = this.querySelector('#lon');
-        if (latField && !latField.value) latField.placeholder = homeZone.attributes.latitude;
-        if (lonField && !lonField.value) lonField.placeholder = homeZone.attributes.longitude;
-      }
-    }
-  }
+  set hass(hass) { this._hass = hass; }
 
   setConfig(config) {
     this._config = { ...DEFAULTS, ...config };
     this._render();
-    this._rendered = true;
   }
 
   _render() {
+    const c = this._config;
     this.innerHTML = `
+      <style>
+        .card-config { display: flex; flex-direction: column; gap: 16px; }
+        .row { display: flex; gap: 16px; }
+        .row > * { flex: 1; }
+      </style>
       <div class="card-config">
         <div class="row">
-          <ha-textfield
-            label="Latitude"
-            type="number"
-            step="0.01"
-            id="lat"
-            value="${this._config.lat ?? ''}"
-            placeholder="Home zone"
-            helper="Empty = use Home zone"
-          ></ha-textfield>
-          <ha-textfield
-            label="Longitude"
-            type="number"
-            step="0.01"
-            id="lon"
-            value="${this._config.lon ?? ''}"
-            placeholder="Home zone"
-            helper="Empty = use Home zone"
-          ></ha-textfield>
+          <ha-textfield label="Latitude" type="number" step="0.01" id="lat" value="${c.lat ?? ''}" placeholder="Home zone"></ha-textfield>
+          <ha-textfield label="Longitude" type="number" step="0.01" id="lon" value="${c.lon ?? ''}" placeholder="Home zone"></ha-textfield>
         </div>
         <div class="row">
-          <ha-textfield
-            label="Zoom"
-            type="number"
-            id="zoom"
-            value="${this._config.zoom}"
-            helper="7-19, higher = closer"
-          ></ha-textfield>
-          <ha-textfield
-            label="Time Offset (min)"
-            type="number"
-            id="timeOffset"
-            value="${this._config.timeOffset}"
-            helper="0-180, initial frame from now"
-          ></ha-textfield>
+          <ha-textfield label="Zoom (7-19)" type="number" id="zoom" value="${c.zoom}"></ha-textfield>
+          <ha-textfield label="Time Offset (min)" type="number" id="timeOffset" value="${c.timeOffset}"></ha-textfield>
         </div>
         <div class="row">
-          <ha-textfield
-            label="Animation Speed (ms)"
-            type="number"
-            step="50"
-            id="animationSpeed"
-            value="${this._config.animationSpeed}"
-            helper="50-10000, lower = faster"
-          ></ha-textfield>
-          <ha-textfield
-            label="Overlay Opacity"
-            type="number"
-            step="0.1"
-            id="opacity"
-            value="${this._config.opacity}"
-            helper="0.1-1, lower = transparent"
-          ></ha-textfield>
+          <ha-textfield label="Animation Speed (ms)" type="number" step="50" id="animationSpeed" value="${c.animationSpeed}"></ha-textfield>
+          <ha-textfield label="Opacity (0.1-1)" type="number" step="0.1" id="opacity" value="${c.opacity}"></ha-textfield>
         </div>
         <div class="row">
-          <ha-textfield
-            label="Auto Refresh (min)"
-            type="number"
-            step="5"
-            id="refreshInterval"
-            value="${this._config.refreshInterval}"
-            helper="0 = off, minimum 5"
-          ></ha-textfield>
-          <div class="spacer"></div>
+          <ha-textfield label="Auto Refresh (min)" type="number" step="5" id="refreshInterval" value="${c.refreshInterval}"></ha-textfield>
+          <div></div>
         </div>
-        <div class="row switches">
-          <ha-formfield label="Autoplay on load">
-            <ha-switch id="autoplay" ${this._config.autoplay ? 'checked' : ''}></ha-switch>
-          </ha-formfield>
-          <ha-formfield label="Show location marker">
-            <ha-switch id="showMarker" ${this._config.showMarker ? 'checked' : ''}></ha-switch>
-          </ha-formfield>
+        <div class="row">
+          <ha-formfield label="Autoplay"><ha-switch id="autoplay" ${c.autoplay ? 'checked' : ''}></ha-switch></ha-formfield>
+          <ha-formfield label="Show marker"><ha-switch id="showMarker" ${c.showMarker ? 'checked' : ''}></ha-switch></ha-formfield>
         </div>
       </div>
-      <style>
-        .card-config {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-        .row {
-          display: flex;
-          gap: 16px;
-        }
-        .row ha-textfield, .spacer {
-          flex: 1;
-        }
-        .switches {
-          flex-wrap: wrap;
-        }
-        .switches ha-formfield {
-          flex: 1;
-          min-width: 150px;
-        }
-      </style>
     `;
 
-    // Validation rules and default helpers
-    const fields = {
-      lat: { hint: 'Empty = use Home zone', validate: (v) => v === '' || (v >= -90 && v <= 90) ? null : 'Must be -90 to 90' },
-      lon: { hint: 'Empty = use Home zone', validate: (v) => v === '' || (v >= -180 && v <= 180) ? null : 'Must be -180 to 180' },
-      zoom: { hint: '7-19, higher = closer', validate: (v) => (v >= 7 && v <= 19) ? null : 'Must be 7-19' },
-      timeOffset: { hint: '0-180, initial frame from now', validate: (v) => (v >= 0 && v <= 180) ? null : 'Must be 0-180' },
-      animationSpeed: { hint: '50-10000, lower = faster', validate: (v) => (v >= 50 && v <= 10000) ? null : 'Must be 50-10000' },
-      opacity: { hint: '0.1-1, lower = transparent', validate: (v) => (v >= 0.1 && v <= 1) ? null : 'Must be 0.1-1' },
-      refreshInterval: { hint: '0 = off, minimum 5', validate: (v) => (v === 0 || v >= 5) ? null : 'Must be 0 (off) or at least 5' },
-    };
-
-    this._errors = {};
-
-    // Add event listeners for text fields
-    Object.keys(fields).forEach(id => {
-      const field = this.querySelector(`#${id}`);
-      const { hint, validate: validator } = fields[id];
-
-      const validate = () => {
-        const val = field.value;
-        const numVal = parseFloat(val);
-        const error = validator(val === '' ? '' : numVal);
-        this._errors[id] = error;
-
-        // Update helper text: show error or restore hint
-        field.helper = error || hint;
-        field.invalid = !!error;
-
-        return { val, numVal, error };
-      };
-
-      // Validate on input for immediate feedback
-      field.addEventListener('input', validate);
-
-      // Save on change (blur) if valid
-      field.addEventListener('change', () => {
-        const { val, numVal, error } = validate();
-        if (error) return;
-
+    ['lat', 'lon', 'zoom', 'timeOffset', 'animationSpeed', 'opacity', 'refreshInterval'].forEach(id => {
+      this.querySelector(`#${id}`).addEventListener('change', (e) => {
+        const val = e.target.value;
         if (val === '' && (id === 'lat' || id === 'lon')) {
-          delete this._config[id]; // Use home zone default
+          delete this._config[id];
         } else {
-          this._config[id] = numVal;
+          this._config[id] = parseFloat(val);
         }
         this._fireChange();
       });
     });
 
-    // Add event listeners for switches
     ['autoplay', 'showMarker'].forEach(id => {
       this.querySelector(`#${id}`).addEventListener('change', (e) => {
         this._config[id] = e.target.checked;
@@ -654,12 +383,11 @@ class BuienradarRainCardEditor extends HTMLElement {
   }
 
   _fireChange() {
-    const event = new CustomEvent('config-changed', {
+    this.dispatchEvent(new CustomEvent('config-changed', {
       detail: { config: this._config },
       bubbles: true,
       composed: true,
-    });
-    this.dispatchEvent(event);
+    }));
   }
 }
 
@@ -670,6 +398,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'buienradar-rain-card',
   name: 'Buienradar Rain Card',
-  description: 'A simple rain radar card using Buienradar data',
+  description: 'Rain radar card using Buienradar data',
   preview: true,
 });

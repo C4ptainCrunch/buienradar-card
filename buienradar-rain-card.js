@@ -198,6 +198,9 @@ class BuienradarRainCard extends HTMLElement {
 
     this._bounds = bounds;
 
+    // Click on map toggles play/pause
+    this._map.on('click', () => this._togglePlay());
+
     if (showMarker) {
       const markerIcon = L.divIcon({
         className: 'custom-marker',

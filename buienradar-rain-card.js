@@ -99,12 +99,12 @@ class BuienradarRainCard extends HTMLElement {
           border-top: 1px solid rgba(0,0,0,0.06);
         }
         .play-btn {
-          background: none;
-          border: none;
           cursor: pointer;
           color: #5a7a9a;
-          font-size: 12px;
-          padding: 4px;
+          --mdc-icon-size: 18px;
+          padding: 2px;
+          display: flex;
+          align-items: center;
         }
         .play-btn:hover { color: #3a5a7a; }
         .timeline {
@@ -149,7 +149,7 @@ class BuienradarRainCard extends HTMLElement {
             <div class="status">Loading radar...</div>
           </div>
           <div class="controls">
-            <button class="play-btn">▶</button>
+            <ha-icon class="play-btn" icon="mdi:play"></ha-icon>
             <div class="timeline"><div class="timeline-progress"></div></div>
             <span class="time-label">--:--</span>
           </div>
@@ -303,7 +303,7 @@ class BuienradarRainCard extends HTMLElement {
 
   _play() {
     this._playing = true;
-    this.shadowRoot.querySelector('.play-btn').textContent = '⏸';
+    this.shadowRoot.querySelector('.play-btn').setAttribute('icon', 'mdi:pause');
     this._intervalId = setInterval(() => {
       this._showFrame((this._currentFrame + 1) % this._frameUrls.length);
     }, this._config.animationSpeed);
@@ -311,7 +311,7 @@ class BuienradarRainCard extends HTMLElement {
 
   _pause() {
     this._playing = false;
-    this.shadowRoot.querySelector('.play-btn').textContent = '▶';
+    this.shadowRoot.querySelector('.play-btn').setAttribute('icon', 'mdi:play');
     clearInterval(this._intervalId);
   }
 

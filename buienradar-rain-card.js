@@ -294,7 +294,12 @@ class BuienradarRainCard extends HTMLElement {
     const percent = (index / (this._frameUrls.length - 1)) * 100;
     this.shadowRoot.querySelector('.timeline-progress').style.width = `${percent}%`;
     const t = this._frameTimes[index];
-    if (t) this.shadowRoot.querySelector('.time-label').textContent = `${t.slice(8, 10)}:${t.slice(10, 12)}`;
+    if (t) {
+      const utcTime = this._parseTime(t);
+      const localDate = new Date(utcTime);
+      const pad = (n) => String(n).padStart(2, '0');
+      this.shadowRoot.querySelector('.time-label').textContent = `${pad(localDate.getHours())}:${pad(localDate.getMinutes())}`;
+    }
   }
 
   _togglePlay() {

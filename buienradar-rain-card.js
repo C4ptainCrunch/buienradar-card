@@ -73,7 +73,7 @@ class BuienradarRainCard extends HTMLElement {
           position: relative;
           width: 100%;
           height: 100%;
-          background: #f5f5f5;
+          background: var(--ha-card-background, var(--card-background-color));
           border-radius: 12px;
           overflow: hidden;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -95,18 +95,19 @@ class BuienradarRainCard extends HTMLElement {
           align-items: center;
           gap: 8px;
           padding: 8px 12px;
-          background: rgba(255,255,255,0.9);
-          border-top: 1px solid rgba(0,0,0,0.06);
+          background: var(--card-background-color, rgba(255,255,255,0.9));
+          border-top: 1px solid var(--divider-color);
+          backdrop-filter: blur(10px);
         }
         .play-btn {
           cursor: pointer;
-          color: #5a7a9a;
+          color: var(--primary-color);
           --mdc-icon-size: 18px;
           padding: 2px;
           display: flex;
           align-items: center;
         }
-        .play-btn:hover { color: #3a5a7a; }
+        .play-btn:hover { opacity: 0.7; }
         .timeline {
           flex: 1;
           height: 3px;
@@ -116,12 +117,12 @@ class BuienradarRainCard extends HTMLElement {
         }
         .timeline-progress {
           height: 100%;
-          background: #5a9fcf;
+          background: var(--primary-color);
           border-radius: 2px;
           width: 0%;
         }
         .time-label {
-          color: #5a7a9a;
+          color: var(--secondary-text-color);
           font-size: 11px;
           font-family: -apple-system, BlinkMacSystemFont, sans-serif;
           min-width: 36px;
@@ -132,16 +133,17 @@ class BuienradarRainCard extends HTMLElement {
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
-          color: #5a7a9a;
+          color: var(--secondary-text-color);
           font-family: -apple-system, BlinkMacSystemFont, sans-serif;
           font-size: 13px;
           z-index: 10;
-          background: rgba(255,255,255,0.95);
+          background: var(--card-background-color, rgba(255,255,255,0.95));
           padding: 10px 20px;
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          backdrop-filter: blur(10px);
         }
-        .error { color: #d9534f; }
+        .error { color: var(--error-color, #d9534f); }
       </style>
       <ha-card>
         <div class="container">

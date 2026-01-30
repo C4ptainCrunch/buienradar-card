@@ -84,6 +84,8 @@ class BuienradarRainCard extends HTMLElement {
           width: 100%;
           flex: 1;
           min-height: 200px;
+          position: relative;
+          z-index: 0;
         }
         .map-container .leaflet-overlay-pane img {
           filter: hue-rotate(-60deg) saturate(2.5) brightness(0.9);
@@ -133,7 +135,7 @@ class BuienradarRainCard extends HTMLElement {
           color: #5a7a9a;
           font-family: -apple-system, BlinkMacSystemFont, sans-serif;
           font-size: 13px;
-          z-index: 1000;
+          z-index: 10;
           background: rgba(255,255,255,0.95);
           padding: 10px 20px;
           border-radius: 8px;
